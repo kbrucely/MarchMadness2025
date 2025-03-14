@@ -1,0 +1,169 @@
+---
+title: "March Madness 2025"
+author: "Kevin Ly"
+date: "2025-03-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Front Matter
+```{r}
+library(tidyverse)
+library(elo)
+library(tibble)
+
+teams <- read.csv("~/Documents/MarchMadness2025/MTeams.csv")
+box_scores <- read.csv("~/Documents/MarchMadness2025/MRegularSeasonDetailedResults.csv")
+tourney_scores <- read.csv("~/Documents/MarchMadness2025/MNCAATourneyDetailedResults.csv")
+MNCAATourneySeeds <- read.csv("~/Documents/MarchMadness2025/MNCAATourneySeeds.csv")
+```
+
+The basic strategy is going to be 
+1. Data preparation, binding teams, box scores, and tourney scores into one data frame
+2. Include the winning and losing team's ELO scores in our main data set
+3. Build an average of the team's recent performance using the box scores
+4. Run a logistic regression with the data from 2 and 3
+5. get a table with the teams, elo scores, and recent performance data
+6. Write a loop that will do a prediction for each team in the tournament against every other team in the tournament using the data from part 5.
+
+## Data preparation
+
+### Part 1
+First we should append the tourney and regular season box scores together
+```{r}
+gamedata <- rbind(box_scores,tourney_scores)
+```
+
+Next I want to add columns that give us winning and losing team names.  Do the winning teams first
+```{r}
+gamedata <- merge(teams[,c(1,2)], gamedata, by.x = "TeamID", by.y = "WTeamID", all.y = TRUE)
+gamedata <- gamedata %>% rename(WTeamID = TeamID,
+                WTeamName = TeamName)
+```
+
+Next do the losing teams
+```{r}
+gamedata <- merge(teams[,c(1,2)], gamedata, by.x = "TeamID", by.y = "LTeamID", all.y = TRUE)
+gamedata <- gamedata %>% rename(LTeamID = TeamID,
+                LTeamName = TeamName)
+```
+
+
+We need to turn the game wins from a winning team ID/ losing team ID to a response that we can actually train the regression on
+```{r}
+gamedata <- gamedata %>% mutate(lower_team = pmin(WTeamID, LTeamID), # lower refers to ID number
+           higher_team = pmax(WTeamID, LTeamID),
+           lower_team_wins = ifelse(lower_team == WTeamID, "YES", "NO"))
+```
+
+Let's order by season and day number
+```{r}
+gamedata <- gamedata[with(gamedata, order(Season, DayNum)),]
+```
+
+### Part 2
+Next we need to try to calculate the winning and losing teams ELO scores and add them to the game data.  We're going to use the elo.run function from the elos package to calculate this
+
+```{r}
+eloScores <- elo.run(score(gamedata$WScore, gamedata$LScore) ~ gamedata$WTeamName + gamedata$LTeamName, data = gamedata, k = 20)
+```
+
+Now we're going to add the elos into the gamedata so we can use it in our regression training
+```{r}
+gamedata <- gamedata %>% mutate(WTeamElo = eloScores$elos[,7], LTeamElo = eloScores$elos[,8])
+```
+
+```{r}
+
+```
+
+
+Let's just check with a quick data frame to see how kansas does looking at this.  We should expect a higher ELO
+```{r}
+kansasData <- gamedata %>% filter(WTeamName == "Kansas")
+ArmyData <- gamedata %>% filter(WTeamName == "Army")
+max(kansasData$WTeamElo)
+max(ArmyData$WTeamElo)
+```
+
+These look pretty good, Kansas has a much higher max ELO than ARMY.  
+
+### Part 3
+Here we're going to just add a few extra metrics that we know matter. We'll calculate based on fg pct, 3pt percentage, rebounding differential, and turnover differential.  
+```{r}
+gamedata <- gamedata %>% mutate(WFGPCT = WFGM/WFGA)
+gamedata <- gamedata %>% mutate(W3PTPCT = WFGM3/WFGA3)
+gamedata <- gamedata %>% mutate(WFTPCT = WFTM/WFTA )
+gamedata <- gamedata %>% mutate(WREBDIFF = (WOR+WDR-LOR-LDR))
+gamedata <- gamedata %>% mutate(WTODIFF = (WTO-LTO))
+```
+
+
+
+### Part 4
+Let's train our regression
+```{r}
+levels(as.factor(gamedata$lower_team_wins))
+gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == "YES", 0, 1))
+
+# I tried adding all of the WFGPCT, WFTPCT, W3PTPCT and so on and none of them were significant
+#.  Only rebounding was significant because rebounding is KING!
+Logisticmodel <- glm(lower_team_wins_num ~ WTeamElo + LTeamElo 
+                      + WREBDIFF
+                       , family = binomial, data = gamedata)
+summary(Logisticmodel)
+```
+
+### Part 5
+Start with an example prediction of the very last row from gamedata
+```{r}
+predict(Logisticmodel, newdata = data.frame(WTeamElo = 1406, LTeamElo = 1496, WREBDIFF = 13), type = "response")
+predict(Logisticmodel, newdata = data.frame(WTeamElo = 1903, LTeamElo = 1695, WREBDIFF = 8), type = "response")
+```
+This is the probability the lower team wins so we'll have to check the team ID and assign probability based on if this team has a smaller ID than the other.  
+
+Now we want to read in and build all of the predictions of every team vs every other team in the tourney.  This will allow us to predict future round matchups. First we need to get the final elos into a place we can use them
+```{r}
+finalElos <- as.data.frame(final.elos(eloScores))
+finalElos <- rownames_to_column(finalElos, "TeamName")
+names(finalElos)[names(finalElos) == 'final.elos(eloScores)'] <- 'elo'
+teamstats <- merge(teams[,c(1,2)], finalElos, by = "TeamName")
+```
+
+Next for every team we want to calculate the rebounding diff for the last 9 games they won and add it to the teamstats data frame.
+```{r}
+AVGREB <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(avgreb = mean))
+names(AVGREB)[names(AVGREB) == 'WTeamID'] <- 'TeamID'
+teamstats <- merge(teamstats, AVGREB, by = "TeamID")
+teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WDR_avgreb)
+```
+
+### Part 6
+Here we will take advantage of R and do two things.  First we'll merge against a smaller list of teams that will be in the tournament.  Then we'll do a cross join of every team vs every other team in the tournament.  That will give us two elo's and two rebounding differentials to use.  
+
+Filter the team stats by the teams actually in the tourney
+```{r}
+MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2024)
+teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
+teamstats <- teamstats[,c(1,2,3,7)]
+```
+
+Next we want to do a cross join of everyone
+```{r}
+predictionData <- cross_join(teamstats, teamstats)
+names(predictionData)[names(predictionData) == 'elo.x'] <- 'WTeamElo'
+names(predictionData)[names(predictionData) == 'elo.y'] <- 'LTeamElo'
+
+#We should also make the WREBDIFF the value minus losing teams WREBDIFF
+predictionData <- predictionData %>% mutate(WREBDIFF = totavgreb.x - totavgreb.y)
+```
+
+Finally we should run a prediction of our data against our Logistic model
+```{r}
+tourneyPredictions <- predict(Logisticmodel, predictionData, type = "response")
+predictionData <- predictionData %>% mutate(probLowerTeamWins = tourneyPredictions) 
+```
+
