@@ -174,11 +174,11 @@ teamstats <- teamstats[,c(1,2,3,6,7)]
 Next we want to do a cross join of everyone
 ```{r}
 predictionData <- cross_join(teamstats, teamstats)
-names(predictionData)[names(predictionData) == 'elo.x'] <- 'WTeamElo'
-names(predictionData)[names(predictionData) == 'elo.y'] <- 'LTeamElo'
+predictionData <- predictionData %>% mutate(lower_team_elo = ifelse(TeamID.x <= TeamID.y, elo.x, elo.y))
+predictionData <- predictionData %>% mutate(higher_team_elo = ifelse(TeamID.x <= TeamID.y, elo.y, elo.x))
+predictionData <- predictionData %>% mutate(lower_team_rebdiff = ifelse(predictionData$TeamID.x <= TeamID.y, totavgreb.x - totavgreb.y, totavgreb.y - totavgreb.x))
+predictionData <- predictionData %>% mutate(lower_team_3diff = ifelse(TeamID.x <= TeamID.y, avg3m.x - avg3m.y, avg3m.y - avg3m.x))
 
-#We should also make the WREBDIFF the value minus losing teams WREBDIFF
-predictionData <- predictionData %>% mutate(WREBDIFF = totavgreb.x - totavgreb.y)
 ```
 
 Finally we should run a prediction of our data against our Logistic model
