@@ -150,12 +150,15 @@ names(finalElos)[names(finalElos) == 'final.elos(eloScores)'] <- 'elo'
 teamstats <- merge(teams[,c(1,2)], finalElos, by = "TeamName")
 ```
 
-Next for every team we want to calculate the rebounding diff for the last 9 games they won and add it to the teamstats data frame.
+Next for every team we want to calculate the average rebounds and average 3s made per game
 ```{r}
 AVGREB <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(avgreb = mean))
 names(AVGREB)[names(AVGREB) == 'WTeamID'] <- 'TeamID'
 teamstats <- merge(teamstats, AVGREB, by = "TeamID")
 teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WDR_avgreb)
+
+AVG3 <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
+teamstats <- merge(teamstats, AVG3, by.x = "TeamID", by.y = "WTeamID")
 ```
 
 ### Part 6
@@ -165,7 +168,7 @@ Filter the team stats by the teams actually in the tourney
 ```{r}
 MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2024)
 teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
-teamstats <- teamstats[,c(1,2,3,7)]
+teamstats <- teamstats[,c(1,2,3,6,7)]
 ```
 
 Next we want to do a cross join of everyone
