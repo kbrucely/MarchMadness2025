@@ -76,8 +76,11 @@ Now we're going to add the elos into the gamedata so we can use it in our regres
 gamedata <- gamedata %>% mutate(WTeamElo = eloScores$elos[,7], LTeamElo = eloScores$elos[,8])
 ```
 
-```{r}
+We also want to flag the lower_teams_elo so we can train on it.
 
+```{r}
+gamedata <- gamedata %>% mutate(lower_team_elo = ifelse(lower_team_wins == "YES", WTeamElo, LTeamElo))
+gamedata <- gamedata %>% mutate(higher_team_elo = ifelse(lower_team_wins == "YES", LTeamElo, WTeamElo))
 ```
 
 
@@ -99,6 +102,14 @@ gamedata <- gamedata %>% mutate(W3PTPCT = WFGM3/WFGA3)
 gamedata <- gamedata %>% mutate(WFTPCT = WFTM/WFTA )
 gamedata <- gamedata %>% mutate(WREBDIFF = (WOR+WDR-LOR-LDR))
 gamedata <- gamedata %>% mutate(WTODIFF = (WTO-LTO))
+gamedata <- gamedata %>% mutate(W3DIFF = (WFGM3-LFGM3))
+gamedata <- gamedata %>% mutate(WFTDIFF = (WFTM-LFTM))
+
+#Again flag the lower teams rebound differential
+gamedata <- gamedata %>% mutate(lower_team_rebdiff = ifelse(lower_team_wins == "Yes", WREBDIFF, LDR+LOR-WOR-WDR))
+gamedata <- gamedata %>% mutate(lower_team_todiff = ifelse(lower_team_wins == "Yes", WTODIFF, LTO-WTO))
+gamedata <- gamedata %>% mutate(lower_team_3diff = ifelse(lower_team_wins == "Yes", W3DIFF, LFGM3-WFGM3))
+gamedata <- gamedata %>% mutate(lower_team_ftdiff = ifelse(lower_team_wins == "Yes", WFTDIFF, LFTM-WFTM))
 ```
 
 
@@ -107,12 +118,12 @@ gamedata <- gamedata %>% mutate(WTODIFF = (WTO-LTO))
 Let's train our regression
 ```{r}
 levels(as.factor(gamedata$lower_team_wins))
-gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == "YES", 0, 1))
+gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == "YES", 1, 0))
 
 # I tried adding all of the WFGPCT, WFTPCT, W3PTPCT and so on and none of them were significant
 #.  Only rebounding was significant because rebounding is KING!
-Logisticmodel <- glm(lower_team_wins_num ~ WTeamElo + LTeamElo 
-                      + WREBDIFF
+Logisticmodel <- glm(lower_team_wins_num ~ lower_team_elo + higher_team_elo
+                      + lower_team_rebdiff + lower_team_3diff
                        , family = binomial, data = gamedata)
 summary(Logisticmodel)
 ```
@@ -120,8 +131,14 @@ summary(Logisticmodel)
 ### Part 5
 Start with an example prediction of the very last row from gamedata
 ```{r}
-predict(Logisticmodel, newdata = data.frame(WTeamElo = 1406, LTeamElo = 1496, WREBDIFF = 13), type = "response")
-predict(Logisticmodel, newdata = data.frame(WTeamElo = 1903, LTeamElo = 1695, WREBDIFF = 8), type = "response")
+predict(Logisticmodel, newdata = data.frame(lower_team_elo = 1406, 
+                                            higher_team_elo = 1496, 
+                                            lower_team_rebdiff = -13,
+                                            lower_team_3diff = 6), type = "response")
+predict(Logisticmodel, newdata = data.frame(lower_team_elo = 1903, 
+                                            higher_team_elo = 1695, 
+                                            lower_team_rebdiff = -8,
+                                            lower_team_3diff = 6), type = "response")
 ```
 This is the probability the lower team wins so we'll have to check the team ID and assign probability based on if this team has a smaller ID than the other.  
 
