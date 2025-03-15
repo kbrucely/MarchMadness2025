@@ -14,6 +14,9 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(elo)
 library(tibble)
+library(FNN)
+library(rpart) #For classification and regression trees
+library(rattle) #For creating nice visualizations of trees
 
 teams <- read.csv("~/Documents/MarchMadness2025/MTeams.csv")
 box_scores <- read.csv("~/Documents/MarchMadness2025/MRegularSeasonDetailedResults.csv")
@@ -114,6 +117,8 @@ gamedata <- gamedata %>% mutate(lower_team_ftdiff = ifelse(lower_team_wins == "Y
 
 We should also trim everything that we don't think we need here before training.  
 ```{r}
+testdata <- gamedata %>% filter(Season == 2024 & DayNum >= 134)
+
 gamedata <- gamedata %>% filter(Season != 2025)
 gamedata <- gamedata %>% filter(!(Season == 2024 & DayNum >= 134))
 ```
@@ -128,7 +133,8 @@ gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == 
 # I tried adding all of the WFGPCT, WFTPCT, W3PTPCT and so on and none of them were significant
 #.  Only rebounding and the 3 point differential was significant because rebounding is KING!
 Logisticmodel <- glm(lower_team_wins_num ~ lower_team_elo + higher_team_elo
-                      + lower_team_rebdiff + lower_team_3diff
+                      + lower_team_rebdiff 
+                     + lower_team_3diff 
                        , family = binomial, data = gamedata)
 summary(Logisticmodel)
 ```
@@ -157,11 +163,12 @@ teamstats <- merge(teams[,c(1,2)], finalElos, by = "TeamName")
 
 Next for every team we want to calculate the average rebounds and average 3s made per game
 ```{r}
+# I know I'm just pulling average rebounds for just the wins as a quick metric
 AVGREB <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(avgreb = mean))
 names(AVGREB)[names(AVGREB) == 'WTeamID'] <- 'TeamID'
 teamstats <- merge(teamstats, AVGREB, by = "TeamID")
 teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WDR_avgreb)
-
+# I know I'm just pulling avg 3's made for just the wins as a quick metric
 AVG3 <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
 teamstats <- merge(teamstats, AVG3, by.x = "TeamID", by.y = "WTeamID")
 ```
@@ -190,5 +197,24 @@ Finally we should run a prediction of our data against our Logistic model
 ```{r}
 tourneyPredictions <- predict(Logisticmodel, predictionData, type = "response")
 predictionData <- predictionData %>% mutate(probLowerTeamWins = tourneyPredictions) 
+```
+
+
+### Bonus: class tree
+```{r}
+classTree <- rpart(lower_team_wins_num ~ lower_team_elo 
+                      + higher_team_elo
+                      + lower_team_rebdiff 
+                     + lower_team_3diff, data = gamedata, method = "class")
+```
+
+Now we can make predictions with basically the same function
+```{r}
+classTreePredProb <- predict(classTree, newdata = predictionData, type = "prob")
+```
+
+And append the values to the prediction data so we can read and compare.
+```{r}
+predictionData <- predictionData %>% mutate(probLowTeamWinsClass = classTreePredProb)
 ```
 
