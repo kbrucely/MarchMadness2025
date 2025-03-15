@@ -112,6 +112,11 @@ gamedata <- gamedata %>% mutate(lower_team_3diff = ifelse(lower_team_wins == "Ye
 gamedata <- gamedata %>% mutate(lower_team_ftdiff = ifelse(lower_team_wins == "Yes", WFTDIFF, LFTM-WFTM))
 ```
 
+We should also trim everything that we don't think we need here before training.  
+```{r}
+gamedata <- gamedata %>% filter(Season != 2025)
+gamedata <- gamedata %>% filter(!(Season == 2024 & DayNum >= 134))
+```
 
 
 ### Part 4
@@ -121,7 +126,7 @@ levels(as.factor(gamedata$lower_team_wins))
 gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == "YES", 1, 0))
 
 # I tried adding all of the WFGPCT, WFTPCT, W3PTPCT and so on and none of them were significant
-#.  Only rebounding was significant because rebounding is KING!
+#.  Only rebounding and the 3 point differential was significant because rebounding is KING!
 Logisticmodel <- glm(lower_team_wins_num ~ lower_team_elo + higher_team_elo
                       + lower_team_rebdiff + lower_team_3diff
                        , family = binomial, data = gamedata)
