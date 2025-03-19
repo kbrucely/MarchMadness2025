@@ -156,23 +156,27 @@ This is the probability the lower team wins so we'll have to check the team ID a
 
 Now we want to read in and build all of the predictions of every team vs every other team in the tourney.  This will allow us to predict future round matchups. First we need to get the final elos into a place we can use them
 ```{r}
-finalElos <- as.data.frame(final.elos(eloScores))
+gamedata2025 <- gamedata %>% filter(Season == 2025)
+
+eloScores2025 <- elo.run(score(gamedata2025$WScore, gamedata2025$LScore) ~ gamedata2025$WTeamName + gamedata2025$LTeamName, data = gamedata2025, k = 20)
+
+finalElos <- as.data.frame(final.elos(eloScores2025))
 finalElos <- rownames_to_column(finalElos, "TeamName")
-names(finalElos)[names(finalElos) == 'final.elos(eloScores)'] <- 'elo'
+names(finalElos)[names(finalElos) == 'final.elos(eloScores2025)'] <- 'elo'
 teamstats <- merge(teams[,c(1,2)], finalElos, by = "TeamName")
 ```
 
 Next for every team we want to calculate the average rebounds and average 3s made per game
 ```{r}
 # I know I'm just pulling average rebounds for just the wins as a quick metric
-AVGREB <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(avgreb = mean))
+AVGREB <- gamedata2025 %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(avgreb = mean))
 names(AVGREB)[names(AVGREB) == 'WTeamID'] <- 'TeamID'
 teamstats <- merge(teamstats, AVGREB, by = "TeamID")
 teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WDR_avgreb)
 
 
 # I know I'm just pulling avg 3's made for just the wins as a quick metric
-AVG3 <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
+AVG3 <- gamedata2025 %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
 teamstats <- merge(teamstats, AVG3, by.x = "TeamID", by.y = "WTeamID")
 ```
 
