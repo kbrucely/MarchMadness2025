@@ -72,7 +72,9 @@ gamedata <- gamedata[with(gamedata, order(Season, DayNum)),]
 Next we need to try to calculate the winning and losing teams ELO scores and add them to the game data.  We're going to use the elo.run function from the elos package to calculate this
 
 ```{r}
-eloScores <- elo.run(score(gamedata$WScore, gamedata$LScore) ~ gamedata$WTeamName + gamedata$LTeamName, data = gamedata, k = 20)
+eloScores <- elo.run(score(gamedata$WScore, gamedata$LScore) ~ gamedata$WTeamName + gamedata$LTeamName 
+                     + regress(gamedata$Season,1500,0.2)
+                     , data = gamedata, k = 20)
 ```
 
 Now we're going to add the elos into the gamedata so we can use it in our regression training
@@ -136,6 +138,7 @@ gamedata <- gamedata %>% mutate(lower_team_wins_num = ifelse(lower_team_wins == 
 Logisticmodel <- glm(lower_team_wins_num ~ lower_team_elo + higher_team_elo
                       + lower_team_rebdiff 
                      + lower_team_3diff 
+                     + lower_team_ftdiff
                        , family = binomial, data = gamedata)
 summary(Logisticmodel)
 ```
@@ -146,11 +149,13 @@ Start with an example prediction of the very last row from gamedata
 predict(Logisticmodel, newdata = data.frame(lower_team_elo = 1406, 
                                             higher_team_elo = 1496, 
                                             lower_team_rebdiff = -13,
-                                            lower_team_3diff = 6), type = "response")
-predict(Logisticmodel, newdata = data.frame(lower_team_elo = 1903, 
-                                            higher_team_elo = 1695, 
-                                            lower_team_rebdiff = -8,
-                                            lower_team_3diff = 6), type = "response")
+                                            lower_team_3diff = 6,
+                                            lower_team_ftdiff = -4), type = "response")
+predict(Logisticmodel, newdata = data.frame(lower_team_elo = 1828, 
+                                            higher_team_elo = 1659, 
+                                            lower_team_rebdiff = 11,
+                                            lower_team_3diff = 2,
+                                            lower_team_ftdiff = -3), type = "response")
 ```
 This is the probability the lower team wins so we'll have to check the team ID and assign probability based on if this team has a smaller ID than the other.  
 
@@ -178,6 +183,10 @@ teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WD
 # I know I'm just pulling avg 3's made for just the wins as a quick metric
 AVG3 <- gamedata2025 %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
 teamstats <- merge(teamstats, AVG3, by.x = "TeamID", by.y = "WTeamID")
+
+# I know I'm just pulling avg 3's made for just the wins as a quick metric
+AVGFT <- gamedata2025 %>% group_by(WTeamID) %>% summarise_at(vars(WFTM), list(avgftm = mean))
+teamstats <- merge(teamstats, AVGFT, by.x = "TeamID", by.y = "WTeamID")
 ```
 
 ### Part 6
@@ -187,7 +196,7 @@ Filter the team stats by the teams actually in the tourney
 ```{r}
 MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2025)
 teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
-teamstats <- teamstats[,c(1,2,3,6,7)]
+teamstats <- teamstats[,c(1,2,3,6,7,8)]
 ```
 
 Next we want to do a cross join of everyone so we can get a matchup of every team vs every other etam.
@@ -197,6 +206,7 @@ predictionData <- predictionData %>% mutate(lower_team_elo = ifelse(TeamID.x <= 
 predictionData <- predictionData %>% mutate(higher_team_elo = ifelse(TeamID.x <= TeamID.y, elo.y, elo.x))
 predictionData <- predictionData %>% mutate(lower_team_rebdiff = ifelse(predictionData$TeamID.x <= TeamID.y, totavgreb.x - totavgreb.y, totavgreb.y - totavgreb.x))
 predictionData <- predictionData %>% mutate(lower_team_3diff = ifelse(TeamID.x <= TeamID.y, avg3m.x - avg3m.y, avg3m.y - avg3m.x))
+predictionData <- predictionData %>% mutate(lower_team_ftdiff = ifelse(TeamID.x <= TeamID.y, avgftm.x - avgftm.y, avgftm.y - avgftm.x))
 
 ```
 
@@ -212,7 +222,8 @@ predictionData <- predictionData %>% mutate(probLowerTeamWins = tourneyPredictio
 classTree <- rpart(lower_team_wins_num ~ lower_team_elo 
                       + higher_team_elo
                       + lower_team_rebdiff 
-                     + lower_team_3diff, data = gamedata, method = "class")
+                     + lower_team_3diff
+                   + lower_team_ftdiff, data = gamedata, method = "class")
 ```
 
 Now we can make predictions with basically the same function
