@@ -73,7 +73,7 @@ Next we need to try to calculate the winning and losing teams ELO scores and add
 
 ```{r}
 eloScores <- elo.run(score(gamedata$WScore, gamedata$LScore) ~ gamedata$WTeamName + gamedata$LTeamName 
-                     + regress(gamedata$Season,1500,0.2)
+                     + regress(gamedata$Season,1500,1)
                      , data = gamedata, k = 20)
 ```
 
@@ -194,8 +194,8 @@ Here we will take advantage of R and do two things.  First we'll merge against a
 
 Filter the team stats by the teams actually in the tourney
 ```{r}
-MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2025)
-teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
+#MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2025)
+#teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
 teamstats <- teamstats[,c(1,2,3,6,7,8)]
 ```
 
@@ -238,7 +238,9 @@ predictionData <- predictionData %>% mutate(probLowTeamWinsClass = classTreePred
 
 ## Write the output for kaggle
 ```{r}
-submissiondata <- data.frame(ID = paste("2025",predictionData$TeamID.x,predictionData$TeamID.y, sep="_"), pred = predictionData$probLowerTeamWins)
+kagglepredictions <- predictionData %>% filter(!(TeamID.x == TeamID.y))
+kagglepredictions <- kagglepredictions %>% filter(!(TeamID.x > TeamID.y))
+submissiondata <- data.frame(ID = paste("2025",kagglepredictions$TeamID.x,kagglepredictions$TeamID.y, sep="_"), pred = kagglepredictions$probLowerTeamWins)
 
 write.csv(submissiondata,"~/Documents/MarchMadness2025/submission.csv", row.names = FALSE)
 ```
