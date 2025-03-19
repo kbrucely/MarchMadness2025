@@ -20,6 +20,7 @@ library(rattle) #For creating nice visualizations of trees
 
 teams <- read.csv("~/Documents/MarchMadness2025/MTeams.csv")
 box_scores <- read.csv("~/Documents/MarchMadness2025/MRegularSeasonDetailedResults.csv")
+conf_tourney_scores <- read.csv("~/Documents/MarchMadness2025/MConferenceTourneyGames.csv")
 tourney_scores <- read.csv("~/Documents/MarchMadness2025/MNCAATourneyDetailedResults.csv")
 MNCAATourneySeeds <- read.csv("~/Documents/MarchMadness2025/MNCAATourneySeeds.csv")
 ```
@@ -117,10 +118,10 @@ gamedata <- gamedata %>% mutate(lower_team_ftdiff = ifelse(lower_team_wins == "Y
 
 We should also trim everything that we don't think we need here before training.  
 ```{r}
-testdata <- gamedata %>% filter(Season == 2024 & DayNum >= 134)
+#testdata <- gamedata %>% filter(Season == 2024 & DayNum >= 134)
 
-gamedata <- gamedata %>% filter(Season != 2025)
-gamedata <- gamedata %>% filter(!(Season == 2024 & DayNum >= 134))
+#gamedata <- gamedata %>% filter(Season != 2025)
+#gamedata <- gamedata %>% filter(!(Season == 2024 & DayNum >= 134))
 ```
 
 
@@ -168,6 +169,8 @@ AVGREB <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WOR, WDR), list(a
 names(AVGREB)[names(AVGREB) == 'WTeamID'] <- 'TeamID'
 teamstats <- merge(teamstats, AVGREB, by = "TeamID")
 teamstats <- teamstats %>% mutate(totavgreb = teamstats$WOR_avgreb+ teamstats$WDR_avgreb)
+
+
 # I know I'm just pulling avg 3's made for just the wins as a quick metric
 AVG3 <- gamedata %>% group_by(WTeamID) %>% summarise_at(vars(WFGM3), list(avg3m = mean))
 teamstats <- merge(teamstats, AVG3, by.x = "TeamID", by.y = "WTeamID")
@@ -178,12 +181,12 @@ Here we will take advantage of R and do two things.  First we'll merge against a
 
 Filter the team stats by the teams actually in the tourney
 ```{r}
-MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2024)
+MNCAATourneySeeds <- MNCAATourneySeeds %>% filter(Season == 2025)
 teamstats <- merge(teamstats, MNCAATourneySeeds, by = "TeamID")
 teamstats <- teamstats[,c(1,2,3,6,7)]
 ```
 
-Next we want to do a cross join of everyone
+Next we want to do a cross join of everyone so we can get a matchup of every team vs every other etam.
 ```{r}
 predictionData <- cross_join(teamstats, teamstats)
 predictionData <- predictionData %>% mutate(lower_team_elo = ifelse(TeamID.x <= TeamID.y, elo.x, elo.y))
@@ -216,5 +219,17 @@ classTreePredProb <- predict(classTree, newdata = predictionData, type = "prob")
 And append the values to the prediction data so we can read and compare.
 ```{r}
 predictionData <- predictionData %>% mutate(probLowTeamWinsClass = classTreePredProb)
+```
+
+## Write the output for kaggle
+```{r}
+submissiondata <- data.frame(ID = paste("2025",predictionData$TeamID.x,predictionData$TeamID.y, sep="_"), pred = predictionData$probLowerTeamWins)
+
+write.csv(submissiondata,"~/Documents/MarchMadness2025/submission.csv", row.names = FALSE)
+```
+
+also view the best teams at the end
+```{r}
+teamstats %>% arrange(desc(elo))
 ```
 
